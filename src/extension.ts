@@ -1,3 +1,4 @@
+import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { IDECurrentFileServer } from "./ide_current_file_server";
@@ -106,18 +107,43 @@ export async function activate(context: vscode.ExtensionContext) {
 		log(`Workspace context server port is ${workspaceContextPort}`);
 	}
 
+	const resolveCliCommand = () => {
+		const envCliPath = process.env["HAIII_CLI_PATH"]?.trim();
+		const envDevClientRoot = process.env["HAIII_DEV_CLIENT_ROOT"]?.trim();
+
+		if (context.extensionMode === vscode.ExtensionMode.Development) {
+			if (envCliPath) {
+				return {cmd: `"${envCliPath}"`, env: undefined};
+			}
+
+			const devRoot = envDevClientRoot || clientRoot;
+			if (devRoot) {
+				const cliScript = path.join(devRoot, "dist", "cli.js");
+				if (!fs.existsSync(cliScript)) {
+					return {
+						error: `CLI entry not found at ${cliScript}. Build the CLI first.`,
+					};
+				}
+				return {
+					cmd: `"${process.execPath}" "${cliScript}"`,
+					env: clientEnv,
+				};
+			}
+		}
+
+		return {cmd: "haiii", env: undefined};
+	};
+
 	// Command to run the voice-coding client in a VS Code terminal
 	const runMyProgram = vscode.commands.registerCommand(
 		"voice-coding-vscode-companion.startVoiceCoding",
 		async () => {
-			if (!clientRoot) {
-				vscode.window.showErrorMessage(
-					"Set VOICE_CODING_CLIENT_ROOT in voice-coding-vscode-companion/.env to point at your client folder."
-				);
+			const resolved = resolveCliCommand();
+			if ("error" in resolved) {
+				vscode.window.showErrorMessage(resolved.error ?? "Unknown error.");
 				return;
 			}
-
-			const cmd = `node "${path.join(clientRoot, "dist", "cli.js")}"`;
+			const cmd = resolved.cmd;
 
 			// Prefer workspace root if present
 			const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -131,7 +157,7 @@ export async function activate(context: vscode.ExtensionContext) {
 				voiceCodingTerminal = vscode.window.createTerminal({
 					name: TERMINAL_NAME,
 					cwd,
-					env: clientEnv,
+					env: resolved.env,
 				});
 			} else {
 				// Interrupt any running process in the existing terminal before rerunning
