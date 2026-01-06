@@ -15,8 +15,8 @@ importers:
         specifier: ^8.18.1
         version: 8.18.1
       '@voice-coding/shared-types':
-        specifier: link:../shared_types
-        version: link:../shared_types
+        specifier: file:shared_types
+        version: file:shared_types
       dotenv:
         specifier: ^17.2.2
         version: 17.2.2
@@ -435,6 +435,9 @@ packages:
   '@typescript-eslint/visitor-keys@8.43.0':
     resolution: {integrity: sha512-T+S1KqRD4sg/bHfLwrpF/K3gQLBM1n7Rp7OjjikjTEssI2YJzQpi5WXoynOaQ93ERIuq3O8RBTOUYDKszUCEHw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@voice-coding/shared-types@file:shared_types':
+    resolution: {directory: shared_types, type: directory}
 
   '@vscode/test-cli@0.0.11':
     resolution: {integrity: sha512-qO332yvzFqGhBMJrp6TdwbIydiHgCtxXc2Nl6M58mbH/Z+0CyLR76Jzv4YWPEthhrARprzCRJUqzFvTHFhTj7Q==}
@@ -2251,6 +2254,8 @@ snapshots:
     dependencies:
       '@typescript-eslint/types': 8.43.0
       eslint-visitor-keys: 4.2.1
+
+  '@voice-coding/shared-types@file:shared_types': {}
 
   '@vscode/test-cli@0.0.11':
     dependencies:
