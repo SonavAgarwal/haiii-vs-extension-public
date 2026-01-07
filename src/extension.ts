@@ -14,6 +14,7 @@ import { ContextWebSocketServer } from "./context_ws_server";
 import { BackgroundAgentServer } from "./background_agent_server";
 import dotenv from "dotenv";
 import { initCurrentFileTracker } from "./current_file_tracker";
+import type { BaseMcpHttpServer } from "./mcp_base";
 
 const TERMINAL_NAME = "Voice Coding";
 const LEGACY_TERMINAL_NAME = "Voice Coding Agent";
@@ -77,34 +78,44 @@ export async function activate(context: vscode.ExtensionContext) {
 	workspaceContextServer = new WorkspaceContextServer(log, context);
 	await workspaceContextServer.start();
 
+	const mcpServers: Array<{label: string; instance?: BaseMcpHttpServer}> = [
+		{
+			label: "Current-file server",
+			instance: currentFileServer,
+		},
+		{
+			label: "Workspace server",
+			instance: workspaceServer,
+		},
+		{
+			label: "Navigation server",
+			instance: navigationServer,
+		},
+		{ label: "Code server", instance: codeServer },
+		{
+			label: "Manual server",
+			instance: manualServer,
+		},
+		{
+			label: "Instant code server",
+			instance: instantCodeServer,
+		},
+		{
+			label: "Background agent server",
+			instance: backgroundAgentServer,
+		},
+		{
+			label: "Workspace context server",
+			instance: workspaceContextServer,
+		},
+	];
+
 	// Optional: surface the port in an info message once
 	const contextWsPort = contextWsServer.getPort();
 	if (contextWsPort) log(`Context WebSocket server port is ${contextWsPort}`);
-	const cfPort = currentFileServer.getPort();
-	if (cfPort) log(`Current-file server port is ${cfPort}`);
-	const wsPort = workspaceServer.getPort();
-	if (wsPort) log(`Workspace server port is ${wsPort}`);
-	const navPort = navigationServer.getPort();
-	if (navPort) log(`Navigation server port is ${navPort}`);
-	const codePort = codeServer.getPort();
-	if (codePort) {
-		log(`Code server port is ${codePort}`);
-	}
-	const manualPort = manualServer.getPort();
-	if (manualPort) {
-		log(`Manual server port is ${manualPort}`);
-	}
-	const instantPort = instantCodeServer.getPort();
-	if (instantPort) {
-		log(`Instant code server port is ${instantPort}`);
-	}
-	const backgroundPort = backgroundAgentServer.getPort();
-	if (backgroundPort) {
-		log(`Background agent server port is ${backgroundPort}`);
-	}
-	const workspaceContextPort = workspaceContextServer.getPort();
-	if (workspaceContextPort) {
-		log(`Workspace context server port is ${workspaceContextPort}`);
+	for (const server of mcpServers) {
+		const port = server.instance?.getPort();
+		if (port) log(`${server.label} port is ${port}`);
 	}
 
 	const resolveCliCommand = () => {
@@ -135,10 +146,22 @@ export async function activate(context: vscode.ExtensionContext) {
 		return {cmd: "haiii", env: undefined};
 	};
 
+	const refreshServerRegistry = async () => {
+		for (const server of mcpServers) {
+			try {
+				await server.instance?.ensureRegistered();
+			} catch (e) {
+				log(`Failed to refresh registry for ${server.label}: ${String(e)}`);
+			}
+		}
+	};
+
 	// Command to run the voice-coding client in a VS Code terminal
 	const runMyProgram = vscode.commands.registerCommand(
 		"voice-coding-vscode-companion.startVoiceCoding",
 		async () => {
+			await refreshServerRegistry();
+
 			const resolved = resolveCliCommand();
 			if ("error" in resolved) {
 				vscode.window.showErrorMessage(resolved.error ?? "Unknown error.");

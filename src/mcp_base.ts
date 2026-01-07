@@ -33,6 +33,23 @@ export abstract class BaseMcpHttpServer {
 		_transport: StreamableHTTPServerTransport
 	): Promise<void> {}
 
+	private getWorkspacePath(): string {
+		const workspaceFolders = vscode.workspace.workspaceFolders;
+		return workspaceFolders && workspaceFolders.length > 0
+			? workspaceFolders.map((f) => f.uri.fsPath).join(path.delimiter)
+			: "";
+	}
+
+	private async registerInRegistry(): Promise<void> {
+		if (!this.port) return;
+		await registerServer({
+			context: this.context,
+			name: this.name,
+			port: this.port,
+			workspacePath: this.getWorkspacePath(),
+		});
+	}
+
 	async start(): Promise<void> {
 		if (this.server) return;
 
@@ -134,18 +151,7 @@ export abstract class BaseMcpHttpServer {
 			this.log(`${this.name} listening on port ${this.port}`);
 
 			// Register in the shared registry JSON
-			const workspaceFolders = vscode.workspace.workspaceFolders;
-			const workspacePath =
-				workspaceFolders && workspaceFolders.length > 0
-					? workspaceFolders.map((f) => f.uri.fsPath).join(path.delimiter)
-					: "";
-
-			await registerServer({
-				context: this.context,
-				name: this.name,
-				port: this.port,
-				workspacePath,
-			});
+			await this.registerInRegistry();
 		} else {
 			this.log(`${this.name} listening`);
 		}
@@ -153,6 +159,14 @@ export abstract class BaseMcpHttpServer {
 
 	getPort(): number | undefined {
 		return this.port;
+	}
+
+	async ensureRegistered(): Promise<void> {
+		if (!this.server) {
+			await this.start();
+			return;
+		}
+		await this.registerInRegistry();
 	}
 
 	async stop(): Promise<void> {
