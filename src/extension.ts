@@ -16,8 +16,7 @@ import dotenv from "dotenv";
 import { initCurrentFileTracker } from "./current_file_tracker";
 import type { BaseMcpHttpServer } from "./mcp_base";
 
-const TERMINAL_NAME = "Voice Coding";
-const LEGACY_TERMINAL_NAME = "Voice Coding Agent";
+const TERMINAL_NAME = "haiii";
 
 let currentFileServer: IDECurrentFileServer | undefined;
 let workspaceServer: IDEWorkspaceServer | undefined;
@@ -173,9 +172,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 			voiceCodingTerminal =
 				voiceCodingTerminal ??
-				vscode.window.terminals.find(
-					(t) => t.name === TERMINAL_NAME || t.name === LEGACY_TERMINAL_NAME
-				);
+				vscode.window.terminals.find((t) => t.name === TERMINAL_NAME);
 
 			if (!voiceCodingTerminal) {
 				voiceCodingTerminal = vscode.window.createTerminal({
