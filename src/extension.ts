@@ -124,8 +124,9 @@ export async function activate(context: vscode.ExtensionContext) {
 						error: `CLI entry not found at ${cliScript}. Build the CLI first.`,
 					};
 				}
+				const nodeBin = "node";
 				return {
-					cmd: `"${process.execPath}" "${cliScript}"`,
+					cmd: `"${nodeBin}" "${cliScript}"`,
 					env: clientEnv,
 				};
 			}
