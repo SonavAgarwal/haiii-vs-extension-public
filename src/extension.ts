@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import * as os from "os";
 import * as vscode from "vscode";
 import { IDECurrentFileServer } from "./ide_current_file_server";
 import { IDEWorkspaceServer } from "./ide_workspace_server";
@@ -37,15 +38,25 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Track the last active real file so diff views don't steal context
 	initCurrentFileTracker(context);
 
-	// Load the client root from a local .env (set VOICE_CODING_CLIENT_ROOT there)
 	const extensionRoot = context.extensionUri.fsPath;
-	const extensionEnv =
-		dotenv.config({ path: path.join(extensionRoot, ".env") }).parsed ?? {};
-	const clientRoot = extensionEnv.VOICE_CODING_CLIENT_ROOT;
+	let clientRoot: string | undefined;
+	let clientEnvConfig: dotenv.DotenvConfigOutput = { parsed: undefined };
 
-	const clientEnvConfig = clientRoot
-		? dotenv.config({ path: path.join(clientRoot, ".env") })
-		: { parsed: undefined };
+	if (context.extensionMode === vscode.ExtensionMode.Development) {
+		// In dev: read VOICE_CODING_CLIENT_ROOT from the extension's .env,
+		// then load the client's .env from that path.
+		const extensionEnv =
+			dotenv.config({ path: path.join(extensionRoot, ".env") }).parsed ?? {};
+		clientRoot = extensionEnv.VOICE_CODING_CLIENT_ROOT;
+		clientEnvConfig = clientRoot
+			? dotenv.config({ path: path.join(clientRoot, ".env") })
+			: { parsed: undefined };
+	} else {
+		// In production: load env from the user's ~/.haiii/.env.
+		const haiiiEnvPath = path.join(os.homedir(), ".haiii", ".env");
+		clientEnvConfig = dotenv.config({ path: haiiiEnvPath });
+	}
+
 	const clientEnv = clientEnvConfig.parsed;
 
 	const diffManager = new DiffManager(context);
