@@ -31,226 +31,236 @@ let contextWsServer: ContextWebSocketServer | undefined;
 let voiceCodingTerminal: vscode.Terminal | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
-	const out = vscode.window.createOutputChannel("Voice Coding IDE Companion");
-	const log = (msg: string) => out.appendLine(`[vc] ${msg}`);
-	context.subscriptions.push(out);
+    const out = vscode.window.createOutputChannel("Voice Coding IDE Companion");
+    const log = (msg: string) => out.appendLine(`[vc] ${msg}`);
+    context.subscriptions.push(out);
 
-	// Track the last active real file so diff views don't steal context
-	initCurrentFileTracker(context);
+    // Track the last active real file so diff views don't steal context
+    initCurrentFileTracker(context);
 
-	const extensionRoot = context.extensionUri.fsPath;
-	let clientRoot: string | undefined;
-	let clientEnvConfig: dotenv.DotenvConfigOutput = { parsed: undefined };
+    const extensionRoot = context.extensionUri.fsPath;
+    let clientRoot: string | undefined;
+    let clientEnvConfig: dotenv.DotenvConfigOutput = { parsed: undefined };
 
-	if (context.extensionMode === vscode.ExtensionMode.Development) {
-		// In dev: read VOICE_CODING_CLIENT_ROOT from the extension's .env,
-		// then load the client's .env from that path.
-		const extensionEnv =
-			dotenv.config({ path: path.join(extensionRoot, ".env") }).parsed ?? {};
-		clientRoot = extensionEnv.VOICE_CODING_CLIENT_ROOT;
-		clientEnvConfig = clientRoot
-			? dotenv.config({ path: path.join(clientRoot, ".env") })
-			: { parsed: undefined };
-	} else {
-		// In production: load env from the user's ~/.haiii/.env.
-		const haiiiEnvPath = path.join(os.homedir(), ".haiii", ".env");
-		clientEnvConfig = dotenv.config({ path: haiiiEnvPath });
-	}
+    if (context.extensionMode === vscode.ExtensionMode.Development) {
+        // In dev: read VOICE_CODING_CLIENT_ROOT from the extension's .env,
+        // then load the client's .env from that path.
+        const extensionEnv =
+            dotenv.config({ path: path.join(extensionRoot, ".env") }).parsed ??
+            {};
+        clientRoot = extensionEnv.VOICE_CODING_CLIENT_ROOT;
+        clientEnvConfig = clientRoot
+            ? dotenv.config({ path: path.join(clientRoot, ".env") })
+            : { parsed: undefined };
+    } else {
+        // In production: load env from the user's ~/.haiii/.env.
+        const haiiiEnvPath = path.join(os.homedir(), ".haiii", ".env");
+        clientEnvConfig = dotenv.config({ path: haiiiEnvPath });
+    }
 
-	const clientEnv = clientEnvConfig.parsed;
+    const clientEnv = clientEnvConfig.parsed;
 
-	const diffManager = new DiffManager(context);
-	const inlinePreviewManager = new InlinePreviewManager(context);
+    const diffManager = new DiffManager(context);
+    const inlinePreviewManager = new InlinePreviewManager(context);
 
-	// Start the WebSocket server for context and diff updates
-	contextWsServer = new ContextWebSocketServer(log, context, diffManager);
-	await contextWsServer.start();
+    // Start the WebSocket server for context and diff updates
+    contextWsServer = new ContextWebSocketServer(log, context, diffManager);
+    await contextWsServer.start();
 
-	currentFileServer = new IDECurrentFileServer(log, context);
-	await currentFileServer.start();
-	workspaceServer = new IDEWorkspaceServer(log, context);
-	await workspaceServer.start();
-	navigationServer = new IDENavigationServer(log, context);
-	await navigationServer.start();
-	codeServer = new CodeServer(log, context, diffManager, inlinePreviewManager);
-	await codeServer.start();
-	manualServer = new ManualServer(
-		log,
-		context,
-		diffManager,
-		inlinePreviewManager
-	);
-	await manualServer.start();
-	instantCodeServer = new InstantCodeServer(log, context);
-	await instantCodeServer.start();
-	backgroundAgentServer = new BackgroundAgentServer(log, context);
-	await backgroundAgentServer.start();
-	workspaceContextServer = new WorkspaceContextServer(log, context);
-	await workspaceContextServer.start();
+    currentFileServer = new IDECurrentFileServer(log, context);
+    await currentFileServer.start();
+    workspaceServer = new IDEWorkspaceServer(log, context);
+    await workspaceServer.start();
+    navigationServer = new IDENavigationServer(log, context);
+    await navigationServer.start();
+    codeServer = new CodeServer(
+        log,
+        context,
+        diffManager,
+        inlinePreviewManager,
+    );
+    await codeServer.start();
+    manualServer = new ManualServer(
+        log,
+        context,
+        diffManager,
+        inlinePreviewManager,
+    );
+    await manualServer.start();
+    instantCodeServer = new InstantCodeServer(log, context);
+    await instantCodeServer.start();
+    backgroundAgentServer = new BackgroundAgentServer(log, context);
+    await backgroundAgentServer.start();
+    workspaceContextServer = new WorkspaceContextServer(log, context);
+    await workspaceContextServer.start();
 
-	const mcpServers: Array<{label: string; instance?: BaseMcpHttpServer}> = [
-		{
-			label: "Current-file server",
-			instance: currentFileServer,
-		},
-		{
-			label: "Workspace server",
-			instance: workspaceServer,
-		},
-		{
-			label: "Navigation server",
-			instance: navigationServer,
-		},
-		{ label: "Code server", instance: codeServer },
-		{
-			label: "Manual server",
-			instance: manualServer,
-		},
-		{
-			label: "Instant code server",
-			instance: instantCodeServer,
-		},
-		{
-			label: "Background agent server",
-			instance: backgroundAgentServer,
-		},
-		{
-			label: "Workspace context server",
-			instance: workspaceContextServer,
-		},
-	];
+    const mcpServers: Array<{ label: string; instance?: BaseMcpHttpServer }> = [
+        {
+            label: "Current-file server",
+            instance: currentFileServer,
+        },
+        {
+            label: "Workspace server",
+            instance: workspaceServer,
+        },
+        {
+            label: "Navigation server",
+            instance: navigationServer,
+        },
+        { label: "Code server", instance: codeServer },
+        {
+            label: "Manual server",
+            instance: manualServer,
+        },
+        {
+            label: "Instant code server",
+            instance: instantCodeServer,
+        },
+        {
+            label: "Background agent server",
+            instance: backgroundAgentServer,
+        },
+        {
+            label: "Workspace context server",
+            instance: workspaceContextServer,
+        },
+    ];
 
-	// Optional: surface the port in an info message once
-	const contextWsPort = contextWsServer.getPort();
-	if (contextWsPort) log(`Context WebSocket server port is ${contextWsPort}`);
-	for (const server of mcpServers) {
-		const port = server.instance?.getPort();
-		if (port) log(`${server.label} port is ${port}`);
-	}
+    // Optional: surface the port in an info message once
+    const contextWsPort = contextWsServer.getPort();
+    if (contextWsPort) log(`Context WebSocket server port is ${contextWsPort}`);
+    for (const server of mcpServers) {
+        const port = server.instance?.getPort();
+        if (port) log(`${server.label} port is ${port}`);
+    }
 
-	const resolveCliCommand = () => {
-		const envCliPath = process.env["HAIII_CLI_PATH"]?.trim();
-		const envDevClientRoot = process.env["HAIII_DEV_CLIENT_ROOT"]?.trim();
+    const resolveCliCommand = () => {
+        const envCliPath = process.env["HAIII_CLI_PATH"]?.trim();
+        const envDevClientRoot = process.env["HAIII_DEV_CLIENT_ROOT"]?.trim();
 
-		if (context.extensionMode === vscode.ExtensionMode.Development) {
-			if (envCliPath) {
-				return {cmd: `"${envCliPath}"`, env: undefined};
-			}
+        if (context.extensionMode === vscode.ExtensionMode.Development) {
+            if (envCliPath) {
+                return { cmd: `"${envCliPath}"`, env: undefined };
+            }
 
-			const devRoot = envDevClientRoot || clientRoot;
-			if (devRoot) {
-				const cliScript = path.join(devRoot, "dist", "cli.js");
-				if (!fs.existsSync(cliScript)) {
-					return {
-						error: `CLI entry not found at ${cliScript}. Build the CLI first.`,
-					};
-				}
-				const nodeBin = "node";
-				return {
-					cmd: `"${nodeBin}" "${cliScript}"`,
-					env: clientEnv,
-				};
-			}
-		}
+            const devRoot = envDevClientRoot || clientRoot;
+            if (devRoot) {
+                const cliScript = path.join(devRoot, "dist", "cli.js");
+                if (!fs.existsSync(cliScript)) {
+                    return {
+                        error: `CLI entry not found at ${cliScript}. Build the CLI first.`,
+                    };
+                }
+                const nodeBin = "node";
+                return {
+                    cmd: `"${nodeBin}" "${cliScript}"`,
+                    env: clientEnv,
+                };
+            }
+        }
 
-		return {cmd: "haiii", env: undefined};
-	};
+        return { cmd: "haiii", env: undefined };
+    };
 
-	const refreshServerRegistry = async () => {
-		for (const server of mcpServers) {
-			try {
-				await server.instance?.ensureRegistered();
-			} catch (e) {
-				log(`Failed to refresh registry for ${server.label}: ${String(e)}`);
-			}
-		}
-	};
+    const refreshServerRegistry = async () => {
+        for (const server of mcpServers) {
+            try {
+                await server.instance?.ensureRegistered();
+            } catch (e) {
+                log(
+                    `Failed to refresh registry for ${server.label}: ${String(e)}`,
+                );
+            }
+        }
+    };
 
-	// Command to run the voice-coding client in a VS Code terminal
-	const runMyProgram = vscode.commands.registerCommand(
-		"voice-coding-vscode-companion.startVoiceCoding",
-		async () => {
-			await refreshServerRegistry();
+    // Command to run the voice-coding client in a VS Code terminal
+    const runMyProgram = vscode.commands.registerCommand(
+        "voice-coding-vscode-companion.startVoiceCoding",
+        async () => {
+            await refreshServerRegistry();
 
-			const resolved = resolveCliCommand();
-			if ("error" in resolved) {
-				vscode.window.showErrorMessage(resolved.error ?? "Unknown error.");
-				return;
-			}
-			const cmd = resolved.cmd;
+            const resolved = resolveCliCommand();
+            if ("error" in resolved) {
+                vscode.window.showErrorMessage(
+                    resolved.error ?? "Unknown error.",
+                );
+                return;
+            }
+            const cmd = resolved.cmd;
 
-			// Prefer workspace root if present
-			const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-			voiceCodingTerminal =
-				voiceCodingTerminal ??
-				vscode.window.terminals.find((t) => t.name === TERMINAL_NAME);
+            // Prefer workspace root if present
+            const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            voiceCodingTerminal =
+                voiceCodingTerminal ??
+                vscode.window.terminals.find((t) => t.name === TERMINAL_NAME);
 
-			if (!voiceCodingTerminal) {
-				voiceCodingTerminal = vscode.window.createTerminal({
-					name: TERMINAL_NAME,
-					cwd,
-					env: resolved.env,
-				});
-			} else {
-				// Interrupt any running process in the existing terminal before rerunning
-				voiceCodingTerminal.sendText("\u0003", false);
-			}
+            if (!voiceCodingTerminal) {
+                voiceCodingTerminal = vscode.window.createTerminal({
+                    name: TERMINAL_NAME,
+                    cwd,
+                    env: resolved.env,
+                });
+            } else {
+                // Interrupt any running process in the existing terminal before rerunning
+                voiceCodingTerminal.sendText("\u0003", false);
+            }
 
-			voiceCodingTerminal.show();
-			voiceCodingTerminal.sendText(cmd);
-		}
-	);
+            voiceCodingTerminal.show();
+            voiceCodingTerminal.sendText(cmd);
+        },
+    );
 
-	context.subscriptions.push(runMyProgram);
+    context.subscriptions.push(runMyProgram);
 
-	context.subscriptions.push(
-		vscode.window.onDidCloseTerminal((terminal) => {
-			if (terminal === voiceCodingTerminal) {
-				voiceCodingTerminal = undefined;
-			}
-		})
-	);
+    context.subscriptions.push(
+        vscode.window.onDidCloseTerminal((terminal) => {
+            if (terminal === voiceCodingTerminal) {
+                voiceCodingTerminal = undefined;
+            }
+        }),
+    );
 }
 
 export async function deactivate(): Promise<void> {
-	try {
-		if (contextWsServer) {
-			await contextWsServer.stop();
-			contextWsServer = undefined;
-		}
-		if (currentFileServer) {
-			await currentFileServer.stop();
-			currentFileServer = undefined;
-		}
-		if (workspaceServer) {
-			await workspaceServer.stop();
-			workspaceServer = undefined;
-		}
-		if (navigationServer) {
-			await navigationServer.stop();
-			navigationServer = undefined;
-		}
-		if (codeServer) {
-			await codeServer.stop();
-			codeServer = undefined;
-		}
-		if (manualServer) {
-			await manualServer.stop();
-			manualServer = undefined;
-		}
-		if (instantCodeServer) {
-			await instantCodeServer.stop();
-			instantCodeServer = undefined;
-		}
-		if (backgroundAgentServer) {
-			await backgroundAgentServer.stop();
-			backgroundAgentServer = undefined;
-		}
-		if (workspaceContextServer) {
-			await workspaceContextServer.stop();
-			workspaceContextServer = undefined;
-		}
-	} catch (e) {
-		// best-effort shutdown
-	}
+    try {
+        if (contextWsServer) {
+            await contextWsServer.stop();
+            contextWsServer = undefined;
+        }
+        if (currentFileServer) {
+            await currentFileServer.stop();
+            currentFileServer = undefined;
+        }
+        if (workspaceServer) {
+            await workspaceServer.stop();
+            workspaceServer = undefined;
+        }
+        if (navigationServer) {
+            await navigationServer.stop();
+            navigationServer = undefined;
+        }
+        if (codeServer) {
+            await codeServer.stop();
+            codeServer = undefined;
+        }
+        if (manualServer) {
+            await manualServer.stop();
+            manualServer = undefined;
+        }
+        if (instantCodeServer) {
+            await instantCodeServer.stop();
+            instantCodeServer = undefined;
+        }
+        if (backgroundAgentServer) {
+            await backgroundAgentServer.stop();
+            backgroundAgentServer = undefined;
+        }
+        if (workspaceContextServer) {
+            await workspaceContextServer.stop();
+            workspaceContextServer = undefined;
+        }
+    } catch (e) {
+        // best-effort shutdown
+    }
 }
