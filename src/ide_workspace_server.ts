@@ -14,7 +14,7 @@ export class IDEWorkspaceServer extends BaseMcpHttpServer {
     protected createMcpServer() {
         const server = new McpServer(
             { name: IDE_WORKSPACE_SERVER_NAME, version: "0.0.1" },
-            { capabilities: { logging: {} } }
+            { capabilities: { logging: {} } },
         );
 
         server.registerTool(
@@ -42,7 +42,7 @@ export class IDEWorkspaceServer extends BaseMcpHttpServer {
                 const allFiles = await vscode.workspace.findFiles(
                     "**/*",
                     WORKSPACE_FILE_EXCLUDES,
-                    10000
+                    10000,
                 );
                 const results = fuzzysort
                     .go(words, allFiles, {
@@ -67,60 +67,60 @@ export class IDEWorkspaceServer extends BaseMcpHttpServer {
                         },
                     ],
                 };
-            }
-        );
-
-        server.registerTool(
-            "readFile",
-            {
-                description:
-                    "Read a file from the workspace by URI or absolute path.",
-                inputSchema: z.object({
-                    filePath: z
-                        .string()
-                        .describe("file:// URI or absolute path"),
-                }).shape,
             },
-            async ({ filePath }: { filePath: string }) => {
-                this.log(`Tool readFile called with ${filePath}`);
-                let uri: vscode.Uri;
-                try {
-                    uri = filePath.startsWith("file://")
-                        ? vscode.Uri.parse(filePath)
-                        : vscode.Uri.file(filePath);
-                } catch {
-                    return {
-                        content: [
-                            { type: "text", text: `Invalid path: ${filePath}` },
-                        ],
-                    };
-                }
-                try {
-                    const buf = await vscode.workspace.fs.readFile(uri);
-                    const text = Buffer.from(buf).toString("utf8");
-                    const limit = 20000;
-                    const out =
-                        text.length > limit
-                            ? text.slice(0, limit) +
-                              `\n\n... (truncated, total ${text.length} chars)`
-                            : text;
-
-                    this.log(`Read file ${filePath} with ${out.length} chars`);
-                    return { content: [{ type: "text", text: out }] };
-                } catch (e) {
-                    return {
-                        content: [
-                            {
-                                type: "text",
-                                text: `Failed to read ${filePath}: ${String(
-                                    e
-                                )}`,
-                            },
-                        ],
-                    };
-                }
-            }
         );
+
+        // server.registerTool(
+        //     "readFile",
+        //     {
+        //         description:
+        //             "Read a file from the workspace by URI or absolute path.",
+        //         inputSchema: z.object({
+        //             filePath: z
+        //                 .string()
+        //                 .describe("file:// URI or absolute path"),
+        //         }).shape,
+        //     },
+        //     async ({ filePath }: { filePath: string }) => {
+        //         this.log(`Tool readFile called with ${filePath}`);
+        //         let uri: vscode.Uri;
+        //         try {
+        //             uri = filePath.startsWith("file://")
+        //                 ? vscode.Uri.parse(filePath)
+        //                 : vscode.Uri.file(filePath);
+        //         } catch {
+        //             return {
+        //                 content: [
+        //                     { type: "text", text: `Invalid path: ${filePath}` },
+        //                 ],
+        //             };
+        //         }
+        //         try {
+        //             const buf = await vscode.workspace.fs.readFile(uri);
+        //             const text = Buffer.from(buf).toString("utf8");
+        //             const limit = 20000;
+        //             const out =
+        //                 text.length > limit
+        //                     ? text.slice(0, limit) +
+        //                       `\n\n... (truncated, total ${text.length} chars)`
+        //                     : text;
+        //
+        //             this.log(`Read file ${filePath} with ${out.length} chars`);
+        //             return { content: [{ type: "text", text: out }] };
+        //         } catch (e) {
+        //             return {
+        //                 content: [
+        //                     {
+        //                         type: "text",
+        //                         text: `Failed to read ${filePath}: ${String(
+        //                             e
+        //                         )}`,
+        //                     },
+        //                 ],
+        //             };
+        //         }
+        //     }
+        // );
 
         return server;
     }

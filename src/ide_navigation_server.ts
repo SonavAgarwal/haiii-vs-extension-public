@@ -19,20 +19,20 @@ export class IDENavigationServer extends BaseMcpHttpServer {
     protected createMcpServer() {
         const server = new McpServer(
             { name: IDE_NAVIGATION_SERVER_NAME, version: "0.0.1" },
-            { capabilities: { logging: {} } }
+            { capabilities: { logging: {} } },
         );
 
         server.registerTool(
-            "goToFile",
+            "showFile",
             {
                 description:
-                    "Open a file path in the editor. Shows the file to the user.",
+                    "Open a file in the editor and return its contents.",
                 inputSchema: z.object({
                     filePath: z.string().describe("URI starting with file://"),
                 }).shape,
             },
             async ({ filePath }: { filePath: string }) => {
-                this.log(`Tool openFile called with ${filePath}`);
+                this.log(`Tool showFile called with ${filePath}`);
                 const resolved = await this.resolveFileUri(filePath);
                 if (!resolved) {
                     const msg = `Could not find a workspace file matching ${filePath}`;
@@ -42,12 +42,29 @@ export class IDENavigationServer extends BaseMcpHttpServer {
                 try {
                     await vscode.commands.executeCommand(
                         "vscode.open",
-                        resolved.uri
+                        resolved.uri,
                     );
-                    const msg = resolved.isExact
-                        ? `Opened ${resolved.displayPath}`
-                        : `Opened ${resolved.displayPath} (closest match for ${filePath})`;
-                    this.log(msg);
+                    // Read and return file contents
+                    const buf = await vscode.workspace.fs.readFile(
+                        resolved.uri,
+                    );
+                    const text = Buffer.from(buf).toString("utf8");
+                    const limit = 20000;
+                    const fileContent =
+                        text.length > limit
+                            ? text.slice(0, limit) +
+                              `\n\n... (truncated, total ${text.length} chars)`
+                            : text;
+                    const lines = fileContent
+                        .split("\n")
+                        .map((line, idx) => `${idx + 1}:${line}`);
+                    const header = resolved.isExact
+                        ? `File: ${resolved.displayPath}`
+                        : `File: ${resolved.displayPath} (closest match for ${filePath})`;
+                    const msg = [header, ...lines].join("\n");
+                    this.log(
+                        `showFile opened and returned ${lines.length} lines`,
+                    );
                     return { content: [{ type: "text", text: msg }] };
                 } catch (e) {
                     const msg = `Failed to open ${
@@ -55,14 +72,14 @@ export class IDENavigationServer extends BaseMcpHttpServer {
                     }: ${String(e)}`;
                     return { content: [{ type: "text", text: msg }] };
                 }
-            }
+            },
         );
 
         server.registerTool(
-            "goToCodeSnippet",
+            "showCodeSnippet",
             {
                 description:
-                    "Scroll to the matching snippet in the current file.",
+                    "Scroll to and highlight the matching snippet in the current file. Returns the matched lines with surrounding context.",
                 inputSchema: z.object({
                     code: z
                         .string()
@@ -78,9 +95,9 @@ export class IDENavigationServer extends BaseMcpHttpServer {
                 approximateLineNumber?: number;
             }) => {
                 this.log(
-                    `Tool showCode called with approx line ${
+                    `Tool showCodeSnippet called with approx line ${
                         approximateLineNumber ?? "n/a"
-                    }`
+                    }`,
                 );
                 this.log(`Code snippet given (${code.length} chars):\n${code}`);
                 const doc = await getEffectiveActiveTextDocument();
@@ -93,7 +110,7 @@ export class IDENavigationServer extends BaseMcpHttpServer {
                 const match = this.locateSnippet(
                     doc,
                     code,
-                    approximateLineNumber ?? 1
+                    approximateLineNumber ?? 1,
                 );
                 if (!match) {
                     const msg = "Snippet not found in current file.";
@@ -102,23 +119,40 @@ export class IDENavigationServer extends BaseMcpHttpServer {
                 }
 
                 const highlighted = await this.highlightRange(doc, match.range);
+
+                // Return matched lines with context
+                const contextRadius = 5;
+                const startCtx = Math.max(
+                    0,
+                    match.startLine - 1 - contextRadius,
+                );
+                const endCtx = Math.min(
+                    doc.lineCount,
+                    match.endLine + contextRadius,
+                );
+                const allLines = doc.getText().split("\n");
+                const contextLines = allLines
+                    .slice(startCtx, endCtx)
+                    .map((line, idx) => `${startCtx + idx + 1}:${line}`);
+
                 const rangeLabel =
                     match.startLine === match.endLine
                         ? `line ${match.startLine}`
                         : `lines ${match.startLine}-${match.endLine}`;
-                const msg = `${highlighted ? "Highlighted" : "Found"} ${
+                const header = `${highlighted ? "Highlighted" : "Found"} ${
                     match.matchType
                 } match at ${rangeLabel}.`;
+                const msg = [header, "", ...contextLines].join("\n");
                 this.log(msg);
                 return { content: [{ type: "text", text: msg }] };
-            }
+            },
         );
 
         server.registerTool(
-            "goToLine",
+            "showLine",
             {
                 description:
-                    "Center the editor on a specific line in the current file.",
+                    "Scroll the editor to a line in the current file and return surrounding code.",
                 inputSchema: z.object({
                     startLine: z
                         .number()
@@ -135,7 +169,7 @@ export class IDENavigationServer extends BaseMcpHttpServer {
                 startLine: number;
                 endLine?: number;
             }) => {
-                this.log(`Tool goToLine called with ${startLine}-${endLine}`);
+                this.log(`Tool showLine called with ${startLine}-${endLine}`);
                 const editor = getEffectiveActiveTextEditor();
                 if (!editor || editor.document.uri.scheme !== "file") {
                     const msg = "No active file is open to scroll.";
@@ -145,42 +179,60 @@ export class IDENavigationServer extends BaseMcpHttpServer {
                 const doc = editor.document;
                 const clampedLine = Math.max(
                     1,
-                    Math.min(startLine, doc.lineCount)
+                    Math.min(startLine, doc.lineCount),
                 );
                 const zeroLine = clampedLine - 1;
                 const zeroCol = 0;
                 const startTargetPos = new vscode.Position(zeroLine, zeroCol);
+                const clampedEnd = endLine
+                    ? Math.max(clampedLine, Math.min(endLine, doc.lineCount))
+                    : clampedLine;
                 const endTargetPos = showRange
-                    ? new vscode.Position(
-                          Math.max(
-                              zeroLine,
-                              Math.min(
-                                  (endLine ?? startLine) - 1,
-                                  doc.lineCount - 1
-                              )
-                          ),
-                          0
-                      )
+                    ? new vscode.Position(clampedEnd - 1, 0)
                     : startTargetPos;
                 const targetRange = new vscode.Range(
                     startTargetPos,
-                    endTargetPos
+                    endTargetPos,
                 );
                 try {
                     editor.selection = new vscode.Selection(
                         startTargetPos,
-                        startTargetPos
+                        startTargetPos,
                     );
                     editor.revealRange(
                         targetRange,
                         showRange
                             ? vscode.TextEditorRevealType.Default
-                            : vscode.TextEditorRevealType.InCenter
+                            : vscode.TextEditorRevealType.InCenter,
                     );
-                    const msg = `Revealed ${
-                        doc.uri.fsPath
-                    } at line ${clampedLine}, column ${zeroCol + 1}`;
-                    this.log(msg);
+
+                    // Return surrounding code context
+                    const contextRadius = 15;
+                    const startCtx = Math.max(
+                        0,
+                        clampedLine - 1 - contextRadius,
+                    );
+                    const endCtx = Math.min(
+                        doc.lineCount,
+                        clampedEnd + contextRadius,
+                    );
+                    const allLines = doc.getText().split("\n");
+                    const contextLines = allLines
+                        .slice(startCtx, endCtx)
+                        .map((line, idx) => `${startCtx + idx + 1}:${line}`);
+
+                    const rangeLabel =
+                        clampedLine === clampedEnd
+                            ? `line ${clampedLine}`
+                            : `lines ${clampedLine}-${clampedEnd}`;
+                    const msg = [
+                        `Showing ${rangeLabel} of ${doc.uri.fsPath}:`,
+                        "",
+                        ...contextLines,
+                    ].join("\n");
+                    this.log(
+                        `showLine returned ${contextLines.length} lines of context`,
+                    );
                     return { content: [{ type: "text", text: msg }] };
                 } catch (e) {
                     const msg = `Failed to reveal line ${startLine} in ${
@@ -188,7 +240,7 @@ export class IDENavigationServer extends BaseMcpHttpServer {
                     }: ${String(e)}`;
                     return { content: [{ type: "text", text: msg }] };
                 }
-            }
+            },
         );
 
         return server;
@@ -288,7 +340,7 @@ export class IDENavigationServer extends BaseMcpHttpServer {
             const uris = await vscode.workspace.findFiles(
                 "**/*",
                 WORKSPACE_FILE_EXCLUDES,
-                MAX_WORKSPACE_FILES
+                MAX_WORKSPACE_FILES,
             );
             return uris.map((u) => {
                 const fsPath = u.fsPath;
@@ -305,7 +357,7 @@ export class IDENavigationServer extends BaseMcpHttpServer {
     private locateSnippet(
         doc: vscode.TextDocument,
         snippet: string,
-        lineHint: number
+        lineHint: number,
     ): SnippetMatch | undefined {
         const variants = this.buildSnippetVariants(snippet);
         const text = doc.getText();
@@ -352,7 +404,7 @@ export class IDENavigationServer extends BaseMcpHttpServer {
     private findClosestMatch(
         text: string,
         snippet: string,
-        lineHint: number
+        lineHint: number,
     ): { index: number; line: number } | undefined {
         const offsets: { index: number; line: number }[] = [];
         const lineStarts: number[] = [0];
@@ -408,7 +460,7 @@ export class IDENavigationServer extends BaseMcpHttpServer {
         doc: vscode.TextDocument,
         text: string,
         snippet: string,
-        lineHint: number
+        lineHint: number,
     ): SnippetMatch | undefined {
         const normalizedQuery = this.normalizeForFuzzy(snippet);
         if (!normalizedQuery) return undefined;
@@ -435,12 +487,12 @@ export class IDENavigationServer extends BaseMcpHttpServer {
             ) {
                 const windowLines = rawLines.slice(startIdx, startIdx + size);
                 const windowNormalized = this.normalizeForFuzzy(
-                    windowLines.join("\n")
+                    windowLines.join("\n"),
                 );
                 if (!windowNormalized) continue;
                 const result = fuzzysort.single(
                     normalizedQuery,
-                    windowNormalized
+                    windowNormalized,
                 );
                 if (!result) continue;
 
@@ -482,7 +534,7 @@ export class IDENavigationServer extends BaseMcpHttpServer {
 
     private async highlightRange(
         doc: vscode.TextDocument,
-        range: vscode.Range
+        range: vscode.Range,
     ): Promise<boolean> {
         try {
             const editor = await vscode.window.showTextDocument(doc, {
@@ -490,7 +542,7 @@ export class IDENavigationServer extends BaseMcpHttpServer {
             });
             editor.revealRange(
                 range,
-                vscode.TextEditorRevealType.InCenterIfOutsideViewport
+                vscode.TextEditorRevealType.InCenterIfOutsideViewport,
             );
             const decoration = vscode.window.createTextEditorDecorationType({
                 backgroundColor: "#1e90ff55",
@@ -532,7 +584,7 @@ export class IDENavigationServer extends BaseMcpHttpServer {
             return fsPath;
         }
         return candidates.reduce((shortest, current) =>
-            current.length < shortest.length ? current : shortest
+            current.length < shortest.length ? current : shortest,
         );
     }
 
