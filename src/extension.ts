@@ -163,6 +163,17 @@ export async function activate(context: vscode.ExtensionContext) {
     };
 
     const refreshServerRegistry = async () => {
+        if (contextWsServer) {
+            try {
+                await contextWsServer.ensureRegistered();
+            } catch (e) {
+                log(
+                    `Failed to refresh registry for Context WebSocket server: ${String(
+                        e
+                    )}`
+                );
+            }
+        }
         for (const server of mcpServers) {
             try {
                 await server.instance?.ensureRegistered();

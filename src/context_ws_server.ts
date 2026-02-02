@@ -159,6 +159,29 @@ export class ContextWebSocketServer {
         return this.port;
     }
 
+    async ensureRegistered(): Promise<void> {
+        if (!this.server) {
+            await this.start();
+            return;
+        }
+
+        if (!this.port) {
+            this.log(
+                "ContextWebSocketServer: missing port; skipping registry refresh.",
+            );
+            return;
+        }
+
+        await registerServer({
+            context: this.context,
+            name: "voice-coding-context-ws-server",
+            port: this.port,
+            workspacePath:
+                vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ??
+                process.cwd(),
+        });
+    }
+
     private setupContextListeners(): void {
         // Listen to various VSCode events that should trigger context updates
         const updateContext = () => this.broadcastContext();
