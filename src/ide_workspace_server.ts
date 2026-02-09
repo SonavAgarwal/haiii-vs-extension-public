@@ -48,7 +48,7 @@ export class IDEWorkspaceServer extends BaseMcpHttpServer {
                     .go(words, allFiles, {
                         key: "fsPath",
                         limit: 10,
-                        threshold: 0.3,
+                        threshold: 0.1,
                     })
                     .map((r) => r.obj);
 
@@ -121,6 +121,65 @@ export class IDEWorkspaceServer extends BaseMcpHttpServer {
         //         }
         //     }
         // );
+
+        server.registerTool(
+            "listDirectory",
+            {
+                description:
+                    "List files and folders in a given directory. Returns names with a trailing / for directories.",
+                inputSchema: z.object({
+                    path: z
+                        .string()
+                        .min(1)
+                        .describe("Absolute path to the directory to list"),
+                }).shape,
+            },
+            async ({ path }: { path: string }) => {
+                this.log(`Tool listDirectory called with ${path}`);
+                let uri: vscode.Uri;
+                try {
+                    uri = vscode.Uri.file(path);
+                } catch {
+                    return {
+                        content: [
+                            { type: "text", text: `Invalid path: ${path}` },
+                        ],
+                    };
+                }
+                try {
+                    const stat = await vscode.workspace.fs.stat(uri);
+                    if (stat.type !== vscode.FileType.Directory) {
+                        return {
+                            content: [
+                                {
+                                    type: "text",
+                                    text: `${path} is a file, not a directory. Use showFile to read it.`,
+                                },
+                            ],
+                        };
+                    }
+                    const entries =
+                        await vscode.workspace.fs.readDirectory(uri);
+                    const lines = entries.map(([name, type]) =>
+                        type === vscode.FileType.Directory ? `${name}/` : name,
+                    );
+                    const text =
+                        lines.length > 0
+                            ? lines.join("\n")
+                            : "(empty directory)";
+                    return { content: [{ type: "text", text }] };
+                } catch (e) {
+                    return {
+                        content: [
+                            {
+                                type: "text",
+                                text: `Failed to list ${path}: ${String(e)}`,
+                            },
+                        ],
+                    };
+                }
+            },
+        );
 
         return server;
     }
